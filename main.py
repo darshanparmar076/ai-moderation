@@ -6,13 +6,11 @@ from transformers import pipeline
 app = FastAPI()
 
 # Load model once
-
 moderator = pipeline("text-classification", model="unitary/toxic-bert", top_k=None)
 
 THRESHOLD = 0.70
 
 # ----------- DTO -----------
-
 class Question(BaseModel):
     question: str
     options: List[str]
@@ -21,7 +19,6 @@ class QuizRequest(BaseModel):
     questions: List[Question]
 
 # ----------- CATEGORY MAP -----------
-
 def map_category(label):
     mapping = {
     "toxic": "BAD_WORDS",
@@ -33,13 +30,10 @@ def map_category(label):
     return mapping.get(label.lower(), "UNKNOWN")
 
 # ----------- API -----------
-
 @app.post("/moderate")
 def moderate_quiz(data: QuizRequest):
 
-
     issues = []  
-
     for q_index, q in enumerate(data.questions):  
 
         # AI check question  
@@ -69,7 +63,8 @@ def moderate_quiz(data: QuizRequest):
                         "confidence": round(r["score"], 4)
                     })
                     break
-
+    print("Moderation issues found:", issues)  # Debug log
+    
     if not issues:  
         return {"status": "SAFE"}  
 
