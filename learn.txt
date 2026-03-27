@@ -1,0 +1,270 @@
+AI Moderation Integration Guide (FastAPI + Spring Boot)
+
+---
+
+OBJECTIVE:
+Integrate AI-based content moderation into Spring Boot project using a Python FastAPI service with a pretrained transformer model (toxic-bert).
+
+---
+
+STEP 0: CREATE FASTAPI PROJECT (VERY IMPORTANT)
+
+1. Install Python (if not installed)
+   Download from: https://www.python.org
+
+2. Create project folder in laptop
+
+   Open Command Prompt / PowerShell:
+
+   mkdir ai-moderation
+   cd ai-moderation
+
+3. (Recommended) Create Virtual Environment
+
+   python -m venv venv
+
+4. Activate Virtual Environment
+
+   Windows:
+   venv\Scripts\activate
+
+5. Install required libraries
+
+   pip install fastapi uvicorn transformers torch
+
+6. Create main file
+
+   Create file:
+   main.py
+
+---
+
+STEP 1: ADD AI API CODE (main.py)
+
+Paste this code:
+
+---
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
+from transformers import pipeline
+
+app = FastAPI()
+
+# Load model once
+
+moderator = pipeline("text-classification", model="unitary/toxic-bert", top_k=None)
+
+THRESHOLD = 0.70
+
+# ----------- DTO -----------
+
+class Question(BaseModel):
+question: str
+options: List[str]
+
+class QuizRequest(BaseModel):
+questions: List[Question]
+
+# ----------- CATEGORY MAP -----------
+
+def map_category(label):
+mapping = {
+"toxic": "BAD_WORDS",
+"insult": "HARASSMENT",
+"threat": "VIOLENCE",
+"obscene": "EXPLICIT",
+"identity_hate": "HARASSMENT"
+}
+return mapping.get(label.lower(), "UNKNOWN")
+
+# ----------- API -----------
+
+@app.post("/moderate")
+def moderate_quiz(data: QuizRequest):
+
+```
+issues = []  
+
+for q_index, q in enumerate(data.questions):  
+
+    # AI check question  
+    results = moderator(q.question)[0]  
+    for r in results:  
+        if r["score"] > THRESHOLD and r["label"] != "neutral":  
+            issues.append({  
+                "type": "QUESTION",  
+                "questionIndex": q_index,  
+                "text": q.question,  
+                "category": map_category(r["label"]),  
+                "confidence": round(r["score"], 4)  
+            })  
+            break  
+
+    # AI check options  
+    for o_index, opt in enumerate(q.options):  
+
+        results = moderator(opt)[0]  
+        for r in results:  
+            if r["score"] > THRESHOLD and r["label"] != "neutral":  
+                issues.append({  
+                    "type": "OPTION",  
+                    "questionIndex": q_index,  
+                    "optionIndex": o_index,  
+                    "text": opt,  
+                    "category": map_category(r["label"]),  
+                    "confidence": round(r["score"], 4)  
+                })  
+                break  
+
+if not issues:  
+    return {"status": "SAFE"}  
+
+return {  
+    "status": "FLAGGED",  
+    "issues": issues  
+}  
+```
+
+---
+
+STEP 2: RUN AI SERVICE
+
+Run command:
+
+uvicorn main:app --reload
+
+API will run at:
+http://127.0.0.1:8000
+
+Test endpoint:
+POST http://127.0.0.1:8000/moderate
+
+---
+
+STEP 3: SPRING BOOT INTEGRATION
+
+1. Create DTOs
+
+## QuizRequestDTO.java
+
+public class QuizRequestDTO {
+private List<QuestionDTO> questions;
+}
+
+## QuestionDTO.java
+
+public class QuestionDTO {
+private String question;
+private List<String> options;
+}
+
+## AIResponseDTO.java
+
+public class AIResponseDTO {
+private String status;
+private List<IssueDTO> issues;
+}
+
+## IssueDTO.java
+
+public class IssueDTO {
+private String type;
+private int questionIndex;
+private Integer optionIndex;
+private String text;
+private String category;
+private double confidence;
+}
+
+---
+
+STEP 4: CREATE REST TEMPLATE
+
+@Configuration
+public class Config {
+@Bean
+public RestTemplate restTemplate() {
+return new RestTemplate();
+}
+}
+
+---
+
+STEP 5: CREATE AI SERVICE CLASS
+
+@Service
+public class AIModerationService {
+
+```
+@Autowired  
+private RestTemplate restTemplate;  
+
+private final String AI_URL = "http://127.0.0.1:8000/moderate";  
+
+public AIResponseDTO checkQuiz(QuizRequestDTO request) {  
+    ResponseEntity<AIResponseDTO> response =  
+        restTemplate.postForEntity(AI_URL, request, AIResponseDTO.class);  
+
+    return response.getBody();  
+}  
+```
+
+}
+
+---
+
+STEP 6: USE IN QUIZ SERVICE
+
+@Service
+public class QuizService {
+
+```
+@Autowired  
+private AIModerationService aiService;  
+
+public Object createQuiz(QuizRequestDTO dto) {  
+
+    AIResponseDTO aiResponse = aiService.checkQuiz(dto);  
+
+    if ("SAFE".equals(aiResponse.getStatus())) {  
+        // Save quiz → ACTIVE  
+        return "Quiz Published Successfully";  
+    } else {  
+        // Send response to frontend  
+        return aiResponse;  
+    }  
+}  
+```
+
+}
+
+---
+
+STEP 7: FINAL FLOW
+
+Frontend → Spring Boot → AI API → Response → Decision
+
+SAFE:
+→ Save quiz
+
+FLAGGED:
+→ Return issues
+→ Frontend shows:
+
+* Edit Content
+* Send to Admin
+
+---
+
+IMPORTANT NOTES:
+
+* No input validation is applied
+* All content is processed directly by AI
+* AI handles moderation decisions
+* Admin review handles edge cases
+
+---
+
+## END OF FILE
