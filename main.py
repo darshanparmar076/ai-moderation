@@ -37,7 +37,7 @@ def moderate_quiz(data: QuizRequest):
     for q_index, q in enumerate(data.questions):  
 
         # AI check question  
-        results = moderator(q.question)[0]  
+        results = moderator(q.question)[0]
         for r in results:  
             if r["score"] > THRESHOLD and r["label"] != "neutral":  
                 issues.append({  
