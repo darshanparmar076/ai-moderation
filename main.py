@@ -1,74 +1,61 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
-from transformers import pipeline
 
-app = FastAPI()
+from moderation.schemas import QuizRequest
+from moderation.service import moderate_quiz_service
 
-# Load model once
-moderator = pipeline("text-classification", model="unitary/toxic-bert", top_k=None)
+from evaluation.schemas import BatchAnswerEvaluationRequest
+from evaluation.service import evaluate_answer
 
-THRESHOLD = 0.70
+app = FastAPI(title="QuizOne AI Service")
 
-# ----------- DTO -----------
-class Question(BaseModel):
-    question: str
-    options: List[str]
 
-class QuizRequest(BaseModel):
-    questions: List[Question]
-
-# ----------- CATEGORY MAP -----------
-def map_category(label):
-    mapping = {
-    "toxic": "BAD_WORDS",
-    "insult": "HARASSMENT",
-    "threat": "VIOLENCE",
-    "obscene": "EXPLICIT",
-    "identity_hate": "HARASSMENT"
-    }
-    return mapping.get(label.lower(), "UNKNOWN")
-
-# ----------- API -----------
+# ---------------------------
+# Moderation API
+# ---------------------------
 @app.post("/moderate")
 def moderate_quiz(data: QuizRequest):
+    return moderate_quiz_service(data)
 
-    issues = []  
-    for q_index, q in enumerate(data.questions):  
 
-        # AI check question  
-        results = moderator(q.question)[0]
-        for r in results:  
-            if r["score"] > THRESHOLD and r["label"] != "neutral":  
-                issues.append({  
-                    "type": "QUESTION",  
-                    "questionIndex": q_index,  
-                    "text": q.question,  
-                    "category": map_category(r["label"]),  
-                    "confidence": round(r["score"], 4)  
-                })  
-                break  
+# ---------------------------
+# Batch Answer Evaluation API
+# ---------------------------
+@app.post("/evaluate-answer-batch")
+def evaluate_short_answer_batch(req: BatchAnswerEvaluationRequest):
+    results = []
 
-        # AI check options for the current question
-        for o_index, opt in enumerate(q.options):
-            results = moderator(opt)[0]
-            for r in results:
-                if r["score"] > THRESHOLD and r["label"] != "neutral":
-                    issues.append({
-                        "type": "OPTION",
-                        "questionIndex": q_index,
-                        "optionIndex": o_index,
-                        "text": opt,
-                        "category": map_category(r["label"]),
-                        "confidence": round(r["score"], 4)
-                    })
-                    break
-    print("Moderation issues found:", issues)  # Debug log
-    
-    if not issues:  
-        return {"status": "SAFE"}  
+    # Quiz-level AI settings
+    settings = req.quiz_settings
 
-    return {  
-        "status": "FLAGGED",  
-        "issues": issues  
-    }  
+    for item in req.evaluations:
+        result = evaluate_answer(
+            question=item.question,
+            model_answer=item.model_answer,
+            student_answer=item.student_answer,
+            key_points=item.key_points,
+            max_marks=item.max_marks,
+
+            full_threshold=settings.full_threshold,
+            medium_threshold=settings.medium_threshold,
+            low_threshold=settings.low_threshold,
+
+            full_percentage=settings.full_percentage,
+            medium_percentage=settings.medium_percentage,
+            low_percentage=settings.low_percentage
+        )
+
+        results.append(result)
+
+    return {
+        "status": "SUCCESS",
+        "total_questions": len(results),
+        "quiz_settings": {
+            "full_threshold": settings.full_threshold,
+            "medium_threshold": settings.medium_threshold,
+            "low_threshold": settings.low_threshold,
+            "full_percentage": settings.full_percentage,
+            "medium_percentage": settings.medium_percentage,
+            "low_percentage": settings.low_percentage
+        },
+        "results": results
+    }
