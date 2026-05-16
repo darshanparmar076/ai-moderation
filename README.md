@@ -1,3 +1,12 @@
+---
+title: AI Moderation
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # 🤖 QuizOne AI Evaluation Service
 
 An AI-powered microservice built with **FastAPI** to evaluate short-answer quiz responses using semantic similarity and keyword matching.
